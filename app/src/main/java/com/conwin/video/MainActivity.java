@@ -7,7 +7,6 @@ import android.os.Handler;
 import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Base64;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
@@ -21,9 +20,6 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
     private TextView tv;
@@ -47,6 +43,9 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private int mCount = 0;
+    private long mPreTime = System.currentTimeMillis();
+
     @SuppressLint("HandlerLeak")
     private Handler handler = new Handler() {
 
@@ -60,6 +59,10 @@ public class MainActivity extends AppCompatActivity {
 
             if (null != bitmap) {
                 imageView.setImageBitmap(bitmap);
+                tv.append("\n" + "第" + mCount + "张图，相比上一次间隔  " + (System.currentTimeMillis() - mPreTime) / 1000 + " 秒");
+
+                mPreTime = System.currentTimeMillis();
+                mCount++;
             }
 
         }
@@ -89,9 +92,6 @@ public class MainActivity extends AppCompatActivity {
 
     private String videoURL = "http://test.jingyun.cn:27000/stream/read?flag=0&from=2018-05-18%2020:37:20.0&streamid=";
 
-    //意思是从数组A第i个（即A[i]处，含A[i]）开始copy长度为length个的byte数据到数组B从第j个开始（即B[j]处，含B[j]）覆盖！
-//                    System.arraycopy(Object src, int srcPos, Object dest, int destPos, int length);
-
     private void request() {
         try {
 
@@ -114,24 +114,15 @@ public class MainActivity extends AppCompatActivity {
             conn.setRequestMethod("GET");
             conn.connect();
 
-//            Log.e("---------- ", "conn: " + conn.toString());
-
 //            Map<String, List<String>> map = conn.getHeaderFields();
-//
-//            for (String key : map.keySet()) {
-//                Log.i("---------Header--- ", key + " : " + map.get(key));
-//            }
-
-//            Log.d("---------- ", "map: " + conn.getHeaderFields().toString());
 
             //得到响应流
             InputStream inputStream = conn.getInputStream();
 
-
             if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
 
                 //缓存流数据，等待分割
-                byte[] cache = new byte[1024 * 1000];
+                byte[] cache = new byte[1024 * 1024 * 8];
                 //当前存取的下标
                 int index = 0;
                 //每次读取的大小
@@ -238,21 +229,11 @@ public class MainActivity extends AppCompatActivity {
                         //2. 去掉前半段数据
                         //TODO 切记切掉分隔符
                         int startIndex = findIndex + regexBytes.length;
-                        byte[] split = new byte[cache.length - startIndex];
 
-                        for (int p = startIndex; p < cache.length; p++) {
-                            split[p - startIndex] = cache[p];
-                        }
-
-                        for (int q = 0; q < split.length; q++) {
-                            cache[q] = split[q];
-                        }
-
-//                        Log.d("----cache------ ", new String(cache, "UTF-8"));
+                        System.arraycopy(cache, startIndex, cache, 0, cache.length - startIndex);
 
                         //重置继续赋值的下标
                         index = findIndex;
-
 
                     }
 
@@ -303,10 +284,6 @@ public class MainActivity extends AppCompatActivity {
         Bitmap bitmap;
         try {
             byte[] bitmapArray = st.getBytes("UTF-8");
-
-//            Log.d("--Bitmap--", Arrays.toString(bitmapArray));
-
-//            bitmapArray = Base64.decode(st.trim(), Base64.DEFAULT);
             bitmap = BitmapFactory.decodeByteArray(bitmapArray, 0, bitmapArray.length);
             return bitmap;
         } catch (Exception e) {
