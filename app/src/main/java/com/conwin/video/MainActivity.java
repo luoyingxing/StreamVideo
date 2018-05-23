@@ -89,6 +89,9 @@ public class MainActivity extends AppCompatActivity {
 
     private String videoURL = "http://test.jingyun.cn:27000/stream/read?flag=0&from=2018-05-18%2020:37:20.0&streamid=";
 
+    //意思是从数组A第i个（即A[i]处，含A[i]）开始copy长度为length个的byte数据到数组B从第j个开始（即B[j]处，含B[j]）覆盖！
+//                    System.arraycopy(Object src, int srcPos, Object dest, int destPos, int length);
+
     private void request() {
         try {
 
@@ -102,300 +105,156 @@ public class MainActivity extends AppCompatActivity {
 //            conn.setDoOutput(true);
 //            conn.setUseCaches(false);
 //            conn.setDoInput(true);
-
             conn.setRequestProperty("Connection", "Keep-Alive");
 //            conn.setRequestProperty("Connection", "zh-cn");
 //            conn.setRequestProperty("Charsert", "UTF-8");
-
 //            conn.setRequestProperty("Transfer-Encoding", "chunked");
 //            conn.setRequestProperty("Trailer", "finish-flag");
 //            conn.setRequestProperty("Content-type", "multipart/form-data;boundary=----WebKitFormBoundaryIZDrYHwuf2VJdpHw");
-
             conn.setRequestMethod("GET");
-
             conn.connect();
 
-            Log.e("---------- ", "conn: " + conn.toString());
+//            Log.e("---------- ", "conn: " + conn.toString());
 
-            Map<String, List<String>> map = conn.getHeaderFields();
+//            Map<String, List<String>> map = conn.getHeaderFields();
+//
+//            for (String key : map.keySet()) {
+//                Log.i("---------Header--- ", key + " : " + map.get(key));
+//            }
 
-            for (String key : map.keySet()) {
-                Log.i("---------Header--- ", key + " : " + map.get(key));
-            }
-
-//            Log.e("---------- ", "map: " + map.toString());
+//            Log.d("---------- ", "map: " + conn.getHeaderFields().toString());
 
             //得到响应流
             InputStream inputStream = conn.getInputStream();
 
-            int responseCode = conn.getResponseCode();
 
-//            StringBuilder cacheBuilder = new StringBuilder();
+            if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
 
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-
-                byte[] read = new byte[1024];
-
-//                byte[] cache = new byte[1024 * 100];
-
-                byte[] blockCache = new byte[0];
-
-//                StringBuffer cache = new StringBuffer();
-
-                byte[] regexByte = regex.getBytes();
+                //缓存流数据，等待分割
+                byte[] cache = new byte[1024 * 1000];
+                //当前存取的下标
                 int index = 0;
+                //每次读取的大小
+                byte[] read = new byte[1];
 
                 while (inputStream.read(read) != -1) {
-
 //                    Log.e("----inputStream------ ", new String(read, "UTF-8"));
 
-                    Log.d("----data block----", Arrays.toString(read));
-
-//                    String s = new String(data, "UTF-8");
-
-                    //累计到数组
-                    byte[] cur = blockCache;
-                    byte[] news = new byte[cur.length + read.length];
-
-                    if (blockCache.length == 0) {
-                        blockCache = read;
+                    //TODO 写入数据后
+                    if (index < cache.length) {
+                        cache[index] = read[0];
+                        index++;
                     } else {
-                        for (int i = cur.length; i < news.length; i++) {
-                            news[i] = read[i - cur.length];
-                        }
-
-                        blockCache = news;
-
+                        Log.e("----warning----", "缓冲区内存不足！");
                     }
 
 
-                    boolean find = false;
-                    int flag = 0;
+//                    Log.d("----cache------ ", new String(cache));
 
-                    //TODO 寻找分隔符
-                    for (int i = 0; i < blockCache.length; i++) {
+                    //TODO 写完数据后，开始查找分隔符 regex
+                    byte[] regexBytes = regex.getBytes();
+                    //TODO 分隔符的起始坐标
+                    int findIndex = -1;
 
-                        if (blockCache[i] == regexByte[0]) {
+
+                    for (int i = 0; i < index; i++) {
+
+                        if (cache[i] == regexBytes[0]) {
                             int count = 0;
 
-                            for (int j = 0; j < regexByte.length; j++) {
-
-//                                Log.i("----for----", "i:" + i +
-//                                        " j:" + j +
-//                                        " regexByte.length:" + regexByte.length +
-//                                        " read.length:" + read.length);
-
-                                if (blockCache[i + j] == regexByte[j]) {
+                            for (int j = 0; j < regexBytes.length; j++) {
+                                if (cache[j + i] == regexBytes[j]) {
                                     count++;
+                                } else {
+                                    break;
                                 }
                             }
 
-                            if (count == regexByte.length) {
-                                //TODO find
-                                find = true;
-                                flag = i;
+                            if (count == regexBytes.length) {
+                                //have find
+                                findIndex = i;
+                                break;
                             }
                         }
                     }
 
+                    //TODO 进行分割数据         块数据 findIndex 块数据
+                    if (findIndex != -1) {
+                        //1. 先取出第一块数据
+                        if (findIndex != 0) {
+                            byte[] block = new byte[findIndex];
+                            //取出块数据
+                            for (int k = 0; k < findIndex; k++) {
+                                block[k] = cache[k];
+                            }
 
-                    if (find) {
 
-                        byte[] cache = new byte[flag]; //块数据
+//                            Log.d("---块数据---find in -> " + findIndex, new String(block, "UTF-8"));
 
-                        for (int i = 0; i < flag; i++) {
-                            cache[i] = blockCache[i];
-                        }
+                            //TODO 将块数据进行分割
+                            byte[] splitBytes = "\r\n\r\n".getBytes();
 
-                        //截掉前面一节
-                        byte[] splitCache = new byte[blockCache.length - cache.length];
+                            if (splitBytes.length <= block.length) {
+                                for (int n = 0; n < block.length; n++) {
 
-                        for (int i = 0; i < splitCache.length; i++) {
-                            splitCache[i] = blockCache[i + flag];
-                        }
+                                    if (block[n] == splitBytes[0]) {
+                                        int count = 0;
 
-                        blockCache = splitCache;
+                                        if (block.length - n >= splitBytes.length) {
 
-                        //TODO 块数据处理，寻找图片数据
-                        //判断换行符进行分割
+                                            for (int m = 0; m < splitBytes.length; m++) {
+                                                if (block[n + m] == splitBytes[m]) {
+                                                    count++;
+                                                } else {
+                                                    break;
+                                                }
+                                            }
 
-                        byte[] str = "\r\n\r\n".getBytes();
+                                            if (count == splitBytes.length) {
+                                                //have find image data
 
-                        if (cache.length >= str.length) {
+                                                byte[] image = new byte[block.length - n - splitBytes.length];
 
-                            for (int k = 0; k < cache.length; k++) {
-                                int count = 0;
+                                                int imageIndex = n + splitBytes.length;
+                                                for (int w = 0; w < image.length; w++) {
+                                                    image[w] = block[w + imageIndex];
+                                                }
 
-                                if (cache[k] == str[0]) {
+                                                //send image
 
-                                    for (int p = 0; p < str.length; p++) {
-                                        if (cache[p + k] == str[p]) {
-                                            count++;
+                                                Message msg = handler.obtainMessage();
+                                                msg.obj = getBitmapFromByte(image);
+                                                handler.sendMessage(msg);
+                                            }
                                         }
                                     }
                                 }
-
-                                if (count == str.length) {
-
-                                    byte[] image = new byte[cache.length - k - str.length];
-
-                                    for (int w = 0; w < image.length; w++) {
-                                        image[w] = cache[w + k + str.length];
-                                    }
-
-                                    Message msg = handler.obtainMessage();
-                                    msg.obj = getBitmapFromByte(image);
-                                    handler.sendMessage(msg);
-                                }
                             }
 
+
+                            // TODO ---- 在此之间解析图片数据 ----
                         }
+
+                        //2. 去掉前半段数据
+                        //TODO 切记切掉分隔符
+                        int startIndex = findIndex + regexBytes.length;
+                        byte[] split = new byte[cache.length - startIndex];
+
+                        for (int p = startIndex; p < cache.length; p++) {
+                            split[p - startIndex] = cache[p];
+                        }
+
+                        for (int q = 0; q < split.length; q++) {
+                            cache[q] = split[q];
+                        }
+
+//                        Log.d("----cache------ ", new String(cache, "UTF-8"));
+
+                        //重置继续赋值的下标
+                        index = findIndex;
 
 
                     }
-
-
-//                    boolean find = false;
-//                    int flag = 0;
-//
-//                    //TODO 寻找分隔符
-//                    for (int i = 0; i < read.length; i++) {
-//                        flag = i;
-//                        int count = 0;
-//
-//                        if (read[i] == regexByte[0]) {
-//
-//                            for (int j = 0; j < regexLength; j++) {
-//
-//                                if (read[j] == regexByte[j]) {
-//                                    count++;
-//                                }
-//                            }
-//                        }
-//
-//                        if (count == regexLength) {
-//                            //TODO find
-//                            find = true;
-//                            index = i;
-//                        }
-//                    }
-//
-//
-//                    if (find) {
-//
-//                        for (int i = cache.length - 1; i < read.length - flag + cache.length; i++) {
-//                            cache[i] = (byte) (i);
-//                        }
-//
-//
-//                        //判断换行符进行分割
-//
-//                        byte[] str = "\r\n\r\n".getBytes();
-//                        boolean findSplit = false;
-//                        int split = 0;
-//
-//                        for (int k = 0; k < cache.length; k++) {
-//
-//                            int count = 0;
-//
-//                            if (cache[k] == str[0]) {
-//
-//                                for (int p = 0; p < str.length; p++) {
-//                                    if (cache[p] == str[p]) {
-//                                        count++;
-//                                    }
-//                                }
-//                            }
-//
-//                            if (count == str.length) {
-//                                split = k;
-//                                findSplit = true;
-//                            }
-//                        }
-//
-//
-//                        if (findSplit) {
-//
-//                            byte[] image = new byte[cache.length - split];
-//
-//                            for (int q = split; q < cache.length; q++) {
-//                                image[q - split] = cache[q];
-//                            }
-//
-//
-//                            Message msg = handler.obtainMessage();
-//                            msg.obj = getBitmapFromByte(image);
-//                            handler.sendMessage(msg);
-//
-//                        }
-//
-//
-//                    } else {
-//
-//                        for (int i = index; i < cache.length; i++) {
-//                            cache[i] = (byte) (i);
-//                        }
-//                    }
-
-
-//                    if (s.contains(regex)) {
-//                        String[] str = s.trim().split(regex);
-//
-//                        if (str.length > 0) {
-//                            cache.append(str[0]);
-//                        }
-//
-//                        //TODO 检查是否已满足一块数据
-//                        String blockData = cache.toString().trim();
-////                        Log.v("块数据", blockData);
-//
-//                        String[] blocks = blockData.split("\r\n\r\n");
-//
-//                        if (blocks.length > 1) {
-//                            String image = blocks[1].trim();
-//
-////                            Log.w("--block--header--", blocks[0]);
-////                            Log.d("--block--image--", blocks[1]);
-//
-//                            Message msg = handler.obtainMessage();
-//                            msg.obj = convertStringToIcon(image);
-//                            handler.sendMessage(msg);
-//                        }
-//
-//
-//                        //TODO 清空数据
-//                        cache.setLength(0);
-//
-//
-//                        if (str.length > 1) {
-//                            cache.append(str[1]);
-//                        }
-//
-//
-//                    } else {
-//                        cache.append(s);
-//                    }
-
-
-//                    Log.d("---------- ", "二进制数据: " + byte2hex(data));
-
-
-//                    String[] str = s.split("\r\n\r\n");
-//
-//                    for (String string : str) {
-//                        Log.d("----------> ", string);
-//                        if (string.contains("Content-Type")) {
-//                            break;
-//                        }
-//
-//                        Message msg = handler.obtainMessage();
-//                        msg.obj = convertStringToIcon(string);
-//                        handler.sendMessage(msg);
-//                    }
-
-//                    Message msg = handler.obtainMessage();
-//                    msg.obj = getBitmapFromByte(data);
-//                    handler.sendMessage(msg);
 
                 }
 
@@ -413,19 +272,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // 二进制转字符串
-    private String byte2hex(byte[] b) {
-        StringBuffer sb = new StringBuffer();
-        String tmp = "";
-        for (int i = 0; i < b.length; i++) {
-            tmp = Integer.toHexString(b[i] & 0XFF);
-            if (tmp.length() == 1) {
-                sb.append("0" + tmp);
-            } else {
-                sb.append(tmp);
-            }
-        }
-        return sb.toString();
-    }
+//    private String byte2hex(byte[] b) {
+//        StringBuffer sb = new StringBuffer();
+//        String tmp = "";
+//        for (int i = 0; i < b.length; i++) {
+//            tmp = Integer.toHexString(b[i] & 0XFF);
+//            if (tmp.length() == 1) {
+//                sb.append("0" + tmp);
+//            } else {
+//                sb.append(tmp);
+//            }
+//        }
+//        return sb.toString();
+//    }
 
     public Bitmap getBitmapFromByte(byte[] temp) {
         if (temp != null) {
