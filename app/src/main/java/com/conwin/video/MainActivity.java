@@ -20,6 +20,7 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.ByteBuffer;
 
 public class MainActivity extends AppCompatActivity {
     private TextView tv;
@@ -33,8 +34,8 @@ public class MainActivity extends AppCompatActivity {
         tv = findViewById(R.id.sample_text);
         imageView = findViewById(R.id.image_view);
 
-        tv.setText(new Test().stringFromJNI());
 
+        tv.setText(new Test().stringFromJNI());
         tv.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -42,9 +43,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-
-    private int mCount = 0;
-    private long mPreTime = System.currentTimeMillis();
 
     @SuppressLint("HandlerLeak")
     private Handler handler = new Handler() {
@@ -55,14 +53,8 @@ public class MainActivity extends AppCompatActivity {
             super.handleMessage(msg);
             Bitmap bitmap = (Bitmap) msg.obj;
 
-            Log.w("-----bitmap-----> ", "" + bitmap);
-
             if (null != bitmap) {
                 imageView.setImageBitmap(bitmap);
-                tv.append("\n" + "第" + mCount + "张图，相比上一次间隔  " + (System.currentTimeMillis() - mPreTime) / 1000 + " 秒");
-
-                mPreTime = System.currentTimeMillis();
-                mCount++;
             }
 
         }
@@ -83,7 +75,7 @@ public class MainActivity extends AppCompatActivity {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                request();
+                requestForBuffer();
             }
         }).start();
     }
@@ -253,19 +245,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // 二进制转字符串
-//    private String byte2hex(byte[] b) {
-//        StringBuffer sb = new StringBuffer();
-//        String tmp = "";
-//        for (int i = 0; i < b.length; i++) {
-//            tmp = Integer.toHexString(b[i] & 0XFF);
-//            if (tmp.length() == 1) {
-//                sb.append("0" + tmp);
-//            } else {
-//                sb.append(tmp);
-//            }
-//        }
-//        return sb.toString();
-//    }
+    private String byte2hex(byte[] b) {
+        StringBuffer sb = new StringBuffer();
+        String tmp = "";
+        for (int i = 0; i < b.length; i++) {
+            tmp = Integer.toHexString(b[i] & 0XFF);
+            if (tmp.length() == 1) {
+                sb.append("0" + tmp);
+            } else {
+                sb.append(tmp);
+            }
+        }
+        return sb.toString();
+    }
 
     public Bitmap getBitmapFromByte(byte[] temp) {
         if (temp != null) {
@@ -291,4 +283,169 @@ public class MainActivity extends AppCompatActivity {
             return null;
         }
     }
+
+    private boolean mStop = false;
+
+    private void requestForBuffer() {
+        try {
+            String streamId = URLEncoder.encode("HS9T-ukyShecApu7xTF7SA");
+            URL url = new URL(videoURL + streamId);
+
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setReadTimeout(30 * 1000); // 缓存的最长时间
+            conn.setRequestProperty("Connection", "Keep-Alive");
+            conn.setRequestMethod("GET");
+            conn.connect();
+            InputStream inputStream = conn.getInputStream();
+
+            if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                //缓存流数据，等待分割
+                ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024 * 8);
+
+                //TODO 写完数据后，开始查找分隔符 regex
+                byte[] regexBytes = regex.getBytes();
+                int regexLen = regexBytes.length;
+
+                //TODO 将块数据进行分割
+                byte[] splitBytes = "\r\n\r\n".getBytes();
+                int splitLen = splitBytes.length;
+
+                while (!mStop) {
+//                    Log.e("----inputStream------ ", new String(read, "UTF-8"));
+
+                    int len = inputStream.available();
+
+//                    Log.d("MainActivity", "本次读取长度：" + len);
+
+                    if (len != -1) {
+                        //每次读取的大小
+                        byte[] read = new byte[len];
+                        int res = inputStream.read(read);
+
+                        if (read.length != 0) {  //为0没意义
+                            buffer.put(read);
+
+                            //记录当前读写位置，相当于有效的数据长度为 position
+                            int curPosition = buffer.position();
+
+//                        Log.e("----curPosition------ ", "curPosition: " + curPosition + "  limit: " + buffer.limit());
+
+                            //TODO 分隔符的起始坐标
+                            int findIndex = -1;
+
+                            for (int i = 0; i < buffer.position(); i++) {
+
+                                if (buffer.get(i) == regexBytes[0]) {
+                                    int count = 0;
+
+                                    for (int j = 0; j < regexLen; j++) {
+                                        if (buffer.get(j + i) == regexBytes[j]) {
+                                            count++;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+
+                                    if (count == regexLen) {
+                                        //have find
+                                        findIndex = i;
+                                        Log.d("------------ ", "find index in : " + findIndex);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            //TODO 进行分割数据         块数据 findIndex 块数据
+                            if (findIndex != -1) {
+                                //1. 先取出第一块数据
+                                if (findIndex != 0) {
+                                    byte[] block = new byte[findIndex];
+                                    //取出块数据
+                                    buffer.position(0);
+                                    buffer.mark();
+                                    buffer.get(block, 0, findIndex);
+
+//                                System.arraycopy(cache, startIndex, cache, 0, cache.length - startIndex);
+
+//                                Log.d("---块数据---find in -> " + findIndex, new String(block));
+
+//                                    Log.i("----块数据------ ", new String(block));
+
+
+                                    if (block.length >= splitLen) { //若小于，没法比较
+                                        for (int n = 0; n < block.length; n++) {
+
+                                            if (block[n] == splitBytes[0]) {
+
+                                                int count = 0;
+
+                                                if (block.length - n >= splitLen) {
+                                                    for (int m = 0; m < splitLen; m++) {
+                                                        if (block[n + m] == splitBytes[m]) {
+                                                            count++;
+                                                        } else {
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+
+//                                                Log.e("---分割 --- ", " 比对结果-> count:" + count + "   split: " + splitBytes.length);
+
+                                                if (count == splitBytes.length) {
+                                                    //have find image data
+
+                                                    byte[] image = new byte[block.length - n - splitBytes.length];
+
+                                                    System.arraycopy(block, n + splitBytes.length, image, 0, image.length);
+
+                                                    Log.i("---image --- ", "image.length: " + image.length);
+
+                                                    //send image
+
+                                                    Bitmap bitmap = BitmapFactory.decodeByteArray(image, 0, image.length);
+
+                                                    Message msg = handler.obtainMessage();
+//                                                msg.obj = getBitmapFromByte(image);
+                                                    msg.obj = bitmap;
+                                                    handler.sendMessage(msg);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    //TODO 将后半段数据往前挪
+
+//                                Log.e("---分割 --- ", " 比对结果-> curPosition:" + curPosition + "   findIndex: " + findIndex);
+
+                                    byte[] others = new byte[curPosition - findIndex - regexBytes.length];
+                                    //取出块数据
+                                    buffer.position(findIndex + regexBytes.length);
+                                    buffer.mark();
+                                    buffer.get(others, 0, curPosition - findIndex - regexBytes.length);
+
+                                    buffer.clear();
+                                    buffer.put(others);
+
+                                }
+
+                            }
+                        }
+
+                    }
+
+                }
+
+                inputStream.close();
+            }
+
+            conn.disconnect();
+
+
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
 }
