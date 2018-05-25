@@ -7,6 +7,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
@@ -16,6 +17,7 @@ import com.conwin.video.jni.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -25,6 +27,7 @@ import java.nio.ByteBuffer;
 public class MainActivity extends AppCompatActivity {
     private TextView tv;
     private ImageView imageView;
+    private ISurfaceView surfaceView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,7 +36,7 @@ public class MainActivity extends AppCompatActivity {
 
         tv = findViewById(R.id.sample_text);
         imageView = findViewById(R.id.image_view);
-
+        surfaceView = findViewById(R.id.surface);
 
         tv.setText(new Test().stringFromJNI());
         tv.setOnClickListener(new View.OnClickListener() {
@@ -51,12 +54,39 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void handleMessage(Message msg) {
             super.handleMessage(msg);
-            Bitmap bitmap = (Bitmap) msg.obj;
 
-            if (null != bitmap) {
-                imageView.setImageBitmap(bitmap);
+            switch (msg.what) {
+                case 601:
+                    //image
+                    Bitmap bitmap = (Bitmap) msg.obj;
+
+                    if (null != bitmap) {
+                        imageView.setImageBitmap(bitmap);
+                    }
+
+                    break;
+                case 602:
+                    //header
+                    /**
+                     * Content-Disposition: form-data; name=<field-name>;filename=<filename>
+                     * Content-Type: application/octet-stream
+                     * datetime: yyyy-MM-dd hh:mm:ss.S
+                     * timestamp: 绝对时间戳(ms)
+                     * Content-Length: <byte-size>
+                     */
+                    String string = (String) msg.obj;
+                    Log.w("header", string);
+                    String[] header = string.split("\n");
+
+                    if (header.length > 3) {
+                        String time = header[3];
+                        if (!TextUtils.isEmpty(time)) {
+                            tv.setText(time.substring(9, time.length()));
+                        }
+                    }
+
+                    break;
             }
-
         }
     };
 
@@ -349,7 +379,7 @@ public class MainActivity extends AppCompatActivity {
                                     if (count == regexLen) {
                                         //have find
                                         findIndex = i;
-                                        Log.d("------------ ", "find index in : " + findIndex);
+//                                        Log.d("------------ ", "find index in : " + findIndex);
                                         break;
                                     }
                                 }
@@ -389,25 +419,20 @@ public class MainActivity extends AppCompatActivity {
                                                     }
                                                 }
 
-//                                                Log.e("---分割 --- ", " 比对结果-> count:" + count + "   split: " + splitBytes.length);
-
                                                 if (count == splitBytes.length) {
                                                     //have find image data
-
                                                     byte[] image = new byte[block.length - n - splitBytes.length];
-
                                                     System.arraycopy(block, n + splitBytes.length, image, 0, image.length);
 
-                                                    Log.i("---image --- ", "image.length: " + image.length);
-
                                                     //send image
+                                                    parserImageByte(image);
 
-                                                    Bitmap bitmap = BitmapFactory.decodeByteArray(image, 0, image.length);
 
-                                                    Message msg = handler.obtainMessage();
-//                                                msg.obj = getBitmapFromByte(image);
-                                                    msg.obj = bitmap;
-                                                    handler.sendMessage(msg);
+                                                    byte[] header = new byte[n];
+                                                    System.arraycopy(block, 0, header, 0, header.length);
+
+                                                    //send header text
+                                                    parserHeaderByte(header);
                                                 }
                                             }
                                         }
@@ -448,4 +473,38 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * 解析图片流数据
+     *
+     * @param image byte
+     */
+    private void parserImageByte(byte[] image) {
+        surfaceView.stuffImage(image);
+
+        Message msg = handler.obtainMessage();
+        msg.what = 601;
+        msg.obj = BitmapFactory.decodeByteArray(image, 0, image.length);
+        handler.sendMessage(msg);
+    }
+
+    /**
+     * 解析块头数据
+     *
+     * @param header byte
+     */
+    private void parserHeaderByte(byte[] header) {
+        surfaceView.stuffHeader(header);
+
+        try {
+            String str = new String(header, "UTF-8");
+
+            Message msg = handler.obtainMessage();
+            msg.what = 602;
+            msg.obj = str;
+            handler.sendMessage(msg);
+
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
+    }
 }
