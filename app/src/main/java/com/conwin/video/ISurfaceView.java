@@ -21,8 +21,8 @@ import java.io.UnsupportedEncodingException;
  */
 public class ISurfaceView extends SurfaceView implements SurfaceHolder.Callback {
     private SurfaceHolder holder;
-    private RenderThread renderThread;
-    private boolean isDraw = false;// 控制绘制的开关
+
+    private boolean mEnableDraw = false;
 
     private Paint mPaint;
 
@@ -50,11 +50,13 @@ public class ISurfaceView extends SurfaceView implements SurfaceHolder.Callback 
     private void init() {
         mPaint = new Paint();
         mPaint.setAntiAlias(true);
+        mPaint.setColor(Color.YELLOW);
+        mPaint.setTextSize(40);
+        mPaint.setStrokeWidth(3);
+        mPaint.setTextAlign(Paint.Align.LEFT);
 
         holder = this.getHolder();
         holder.addCallback(this);
-
-        renderThread = new RenderThread();
     }
 
     @Override
@@ -77,21 +79,13 @@ public class ISurfaceView extends SurfaceView implements SurfaceHolder.Callback 
         super.draw(canvas);
     }
 
-    private byte[] image;
-    private byte[] header;
-
-    public void stuffImage(byte[] image) {
-        this.image = image;
-    }
-
-    public void stuffHeader(byte[] header) {
-        this.header = header;
+    public void stuff(byte[] header, byte[] image) {
+        updateImage(header, image);
     }
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        isDraw = true;
-        renderThread.start();
+        mEnableDraw = true;
     }
 
     @Override
@@ -101,32 +95,17 @@ public class ISurfaceView extends SurfaceView implements SurfaceHolder.Callback 
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
-        isDraw = false;
+        mEnableDraw = false;
     }
 
-    /**
-     * 绘制界面的线程
-     *
-     * @author Administrator
-     */
-    private class RenderThread extends Thread {
-        @Override
-        public void run() {
-            // 不停绘制界面
-            while (isDraw) {
-                drawUI();
-            }
-            super.run();
+    public void updateImage(byte[] header, byte[] image) {
+        if (!mEnableDraw) {
+            return;
         }
-    }
 
-    /**
-     * 界面绘制
-     */
-    public void drawUI() {
         Canvas canvas = holder.lockCanvas();
         try {
-            drawCanvas(canvas);
+            drawCanvas(canvas, header, image);
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
@@ -134,16 +113,23 @@ public class ISurfaceView extends SurfaceView implements SurfaceHolder.Callback 
         }
     }
 
-    private void drawCanvas(Canvas canvas) {
-        // 在 canvas 上绘制需要的图形
-
-        //绘制图片
+    /**
+     * @param canvas Canvas
+     * @param header Content-Disposition: form-data; name=<field-name>;filename=<filename>
+     *               Content-Type: application/octet-stream
+     *               datetime: yyyy-MM-dd hh:mm:ss.S
+     *               timestamp: 绝对时间戳(ms)
+     *               Content-Length: <byte-size>
+     * @param image  image data with byte
+     */
+    private void drawCanvas(Canvas canvas, byte[] header, byte[] image) {
+        //draw image
         if (null != image) {
             Rect dst = new Rect(0, 0, getMeasuredWidth(), getMeasuredHeight());
             canvas.drawBitmap(BitmapFactory.decodeByteArray(image, 0, image.length), null, dst, mPaint);
         }
 
-        //绘制时间
+        //draw text of time
         if (null != header) {
             String string = null;
             try {
@@ -153,17 +139,12 @@ public class ISurfaceView extends SurfaceView implements SurfaceHolder.Callback 
             }
 
             if (null != string) {
-                String[] header = string.split("\n");
+                String[] split = string.split("\n");
 
-                if (header.length > 3) {
-                    String times = header[3];
+                if (split.length > 3) {
+                    String times = split[3];
                     if (!TextUtils.isEmpty(times)) {
                         String time = times.substring(9, times.length());
-
-                        mPaint.setColor(Color.YELLOW);
-                        mPaint.setTextSize(40); //以px为单位
-                        mPaint.setStrokeWidth(3);
-                        mPaint.setTextAlign(Paint.Align.LEFT);
 
                         canvas.drawText(time, 10, 60, mPaint);
                     }

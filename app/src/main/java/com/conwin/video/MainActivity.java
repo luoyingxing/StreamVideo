@@ -20,6 +20,7 @@ import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.ByteBuffer;
@@ -341,11 +342,7 @@ public class MainActivity extends AppCompatActivity {
                 int splitLen = splitBytes.length;
 
                 while (!mStop) {
-//                    Log.e("----inputStream------ ", new String(read, "UTF-8"));
-
                     int len = inputStream.available();
-
-//                    Log.d("MainActivity", "本次读取长度：" + len);
 
                     if (len != -1) {
                         //每次读取的大小
@@ -357,8 +354,6 @@ public class MainActivity extends AppCompatActivity {
 
                             //记录当前读写位置，相当于有效的数据长度为 position
                             int curPosition = buffer.position();
-
-//                        Log.e("----curPosition------ ", "curPosition: " + curPosition + "  limit: " + buffer.limit());
 
                             //TODO 分隔符的起始坐标
                             int findIndex = -1;
@@ -379,7 +374,6 @@ public class MainActivity extends AppCompatActivity {
                                     if (count == regexLen) {
                                         //have find
                                         findIndex = i;
-//                                        Log.d("------------ ", "find index in : " + findIndex);
                                         break;
                                     }
                                 }
@@ -395,9 +389,6 @@ public class MainActivity extends AppCompatActivity {
                                     buffer.mark();
                                     buffer.get(block, 0, findIndex);
 
-//                                System.arraycopy(cache, startIndex, cache, 0, cache.length - startIndex);
-
-//                                Log.d("---块数据---find in -> " + findIndex, new String(block));
 
 //                                    Log.i("----块数据------ ", new String(block));
 
@@ -425,22 +416,22 @@ public class MainActivity extends AppCompatActivity {
                                                     System.arraycopy(block, n + splitBytes.length, image, 0, image.length);
 
                                                     //send image
-                                                    parserImageByte(image);
+//                                                    parserImageByte(image);
 
 
                                                     byte[] header = new byte[n];
                                                     System.arraycopy(block, 0, header, 0, header.length);
 
                                                     //send header text
-                                                    parserHeaderByte(header);
+//                                                    parserHeaderByte(header);
+
+                                                    surfaceView.stuff(header, image);
                                                 }
                                             }
                                         }
                                     }
 
                                     //TODO 将后半段数据往前挪
-
-//                                Log.e("---分割 --- ", " 比对结果-> curPosition:" + curPosition + "   findIndex: " + findIndex);
 
                                     byte[] others = new byte[curPosition - findIndex - regexBytes.length];
                                     //取出块数据
@@ -462,11 +453,11 @@ public class MainActivity extends AppCompatActivity {
 
                 inputStream.close();
             }
-
             conn.disconnect();
 
-
         } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (SocketTimeoutException e) {
             e.printStackTrace();
         } catch (IOException e) {
             e.printStackTrace();
@@ -479,8 +470,6 @@ public class MainActivity extends AppCompatActivity {
      * @param image byte
      */
     private void parserImageByte(byte[] image) {
-        surfaceView.stuffImage(image);
-
         Message msg = handler.obtainMessage();
         msg.what = 601;
         msg.obj = BitmapFactory.decodeByteArray(image, 0, image.length);
@@ -493,8 +482,6 @@ public class MainActivity extends AppCompatActivity {
      * @param header byte
      */
     private void parserHeaderByte(byte[] header) {
-        surfaceView.stuffHeader(header);
-
         try {
             String str = new String(header, "UTF-8");
 
